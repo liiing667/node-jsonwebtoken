@@ -161,6 +161,17 @@ As mentioned in [this comment](https://github.com/auth0/node-jsonwebtoken/issues
 * `clockTimestamp`: the time in seconds that should be used as the current time for all necessary comparisons.
 * `nonce`: if you want to check `nonce` claim, provide a string value here. It is used on Open ID for the ID Tokens. ([Open ID implementation notes](https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes))
 * `allowInvalidAsymmetricKeyTypes`: if true, allows asymmetric keys which do not match the specified algorithm. This option is intended only for backwards compatability and should be avoided.
+* `limits`: optional object with structural and byte budgets that are enforced before the token is split, base64 decoded, JSON parsed or cryptographically verified. This keeps oversized or deeply nested tokens from exhausting memory or CPU while being processed. Any individual budget can be relaxed, set to `Infinity` or `false` to disable it, and the whole mechanism can be turned off with `limits: false`. The defaults are:
+  * `maxTokenLength` (default `65536`): maximum byte length of the complete serialized JWT.
+  * `maxHeaderSegmentLength` (default `8192`): maximum byte length of the base64url header segment.
+  * `maxPayloadSegmentLength` (default `524288`): maximum byte length of the base64url payload segment. Large but reasonable payloads can be accepted by raising this value; string payloads remain supported.
+  * `maxSignatureSegmentLength` (default `65536`): maximum byte length of the base64url signature segment.
+  * `maxDepth` (default `12`): maximum nesting depth of parsed header and claim objects/arrays.
+
+  ```js
+  // accept payloads up to 1 MiB
+  jwt.verify(token, secret, { limits: { maxPayloadSegmentLength: 1024 * 1024 } });
+  ```
 
 ```js
 // verify a token symmetric - synchronous
@@ -322,6 +333,33 @@ jwt.verify(token, 'shhhhh', function(err, decoded) {
       err = {
         name: 'JsonWebTokenError',
         message: 'jwt malformed'
+      }
+    */
+  }
+});
+```
+
+### ResourceLimitError
+Thrown when a token violates one of the structural or byte budgets configured through the `limits` option, before any cryptographic verification takes place. It extends `JsonWebTokenError`, so existing `instanceof JsonWebTokenError` handling keeps working.
+
+Error object:
+
+* name: 'ResourceLimitError'
+* code: 'resource_limit'
+* message: a stable description of the budget that was exceeded
+* limit: the configured budget value that was violated
+* value: the actual measured value that violated the budget
+
+```js
+jwt.verify(token, 'shhhhh', function(err, decoded) {
+  if (err) {
+    /*
+      err = {
+        name: 'ResourceLimitError',
+        code: 'resource_limit',
+        message: 'jwt exceeds maximum token length',
+        limit: 65536,
+        value: 72000
       }
     */
   }

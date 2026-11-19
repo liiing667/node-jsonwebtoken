@@ -5,6 +5,7 @@ const decode = require('./decode');
 const timespan = require('./lib/timespan');
 const validateAsymmetricKey = require('./lib/validateAsymmetricKey');
 const PS_SUPPORTED = require('./lib/psSupported');
+const resourceLimits = require('./lib/resourceLimits');
 const jws = require('jws');
 const {KeyObject, createSecretKey, createPublicKey} = require("crypto");
 
@@ -64,10 +65,31 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
     return done(new JsonWebTokenError('jwt must be a string'));
   }
 
-  const parts = jwtString.split('.');
+  let limits;
 
-  if (parts.length !== 3){
-    return done(new JsonWebTokenError('jwt malformed'));
+  try {
+    limits = resourceLimits.resolveLimits(options.limits);
+  } catch (err) {
+    return done(err);
+  }
+
+  let parts;
+
+  if (limits) {
+    // Enforce the structural and byte budgets before splitting, decoding or
+    // parsing anything, so oversized/over-nested input cannot exhaust memory
+    // or CPU while being processed.
+    try {
+      parts = resourceLimits.checkRawToken(jwtString, limits);
+    } catch (err) {
+      return done(err);
+    }
+  } else {
+    parts = jwtString.split('.');
+
+    if (parts.length !== 3){
+      return done(new JsonWebTokenError('jwt malformed'));
+    }
   }
 
   let decodedToken;
@@ -80,6 +102,14 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
 
   if (!decodedToken) {
     return done(new JsonWebTokenError('invalid token'));
+  }
+
+  if (limits) {
+    try {
+      resourceLimits.checkDecodedToken(decodedToken, limits);
+    } catch (err) {
+      return done(err);
+    }
   }
 
   const header = decodedToken.header;
