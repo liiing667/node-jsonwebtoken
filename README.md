@@ -238,6 +238,29 @@ jwt.verify(token, getKey, options, function(err, decoded) {
   console.log(decoded.foo) // bar
 });
 
+// Verify using getKey callback that returns an atomic key resolution
+// (recommended for tenant key rotation where the key and the algorithm
+// policy that applies to it must be resolved together).
+function getKey(header, callback){
+  client.getSigningKey(header.kid, function(err, key) {
+    if (err) {
+      return callback(err);
+    }
+    callback(null, {
+      kid: header.kid,
+      key: key.publicKey || key.rsaPublicKey,
+      algorithms: ['RS256'] // the algorithms this specific key is allowed to use
+    });
+  });
+}
+
+// When the resolver returns an object with an "algorithms" property, that
+// policy takes precedence over the verify "algorithms" option and is paired
+// atomically with the resolved key, so a key rotation can never verify a
+// token with a mismatched (stale) key/algorithm combination. A resolution
+// error or an invalid result fails verification instead of falling back.
+// Resolvers that return the key material directly continue to work.
+
 ```
 
 <details>

@@ -4,6 +4,7 @@ const TokenExpiredError = require('./lib/TokenExpiredError');
 const decode = require('./decode');
 const timespan = require('./lib/timespan');
 const validateAsymmetricKey = require('./lib/validateAsymmetricKey');
+const resolveKey = require('./lib/resolveKey');
 const PS_SUPPORTED = require('./lib/psSupported');
 const jws = require('jws');
 const {KeyObject, createSecretKey, createPublicKey} = require("crypto");
@@ -103,6 +104,16 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
       return done(new JsonWebTokenError('error in secret or public key callback: ' + err.message));
     }
 
+    let resolvedAlgorithms;
+
+    try {
+      const resolvedKey = resolveKey(secretOrPublicKey);
+      secretOrPublicKey = resolvedKey.key;
+      resolvedAlgorithms = resolvedKey.algorithms;
+    } catch (resolutionError) {
+      return done(resolutionError);
+    }
+
     const hasSignature = parts[2].trim() !== '';
 
     if (!hasSignature && secretOrPublicKey){
@@ -129,7 +140,9 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
       }
     }
 
-    if (!options.algorithms) {
+    if (resolvedAlgorithms) {
+      options.algorithms = resolvedAlgorithms;
+    } else if (!options.algorithms) {
       if (secretOrPublicKey.type === 'secret') {
         options.algorithms = HS_ALGS;
       } else if (['rsa', 'rsa-pss'].includes(secretOrPublicKey.asymmetricKeyType)) {
