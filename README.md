@@ -161,6 +161,28 @@ As mentioned in [this comment](https://github.com/auth0/node-jsonwebtoken/issues
 * `clockTimestamp`: the time in seconds that should be used as the current time for all necessary comparisons.
 * `nonce`: if you want to check `nonce` claim, provide a string value here. It is used on Open ID for the ID Tokens. ([Open ID implementation notes](https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes))
 * `allowInvalidAsymmetricKeyTypes`: if true, allows asymmetric keys which do not match the specified algorithm. This option is intended only for backwards compatability and should be avoided.
+* `critical`: declares which critical extension Header Parameter names (the JOSE `crit` Header Parameter, see [RFC 7515 section 4.1.11](https://www.rfc-editor.org/rfc/rfc7515#section-4.1.11)) your application implements. Pass either an array of names, e.g. `["http://example.com/extension"]`, or an object mapping names to either `true` (acknowledged without extra processing) or a handler function `function (value, header) {}` that processes the extension. Any token whose `crit` header lists an unregistered name, a registered Header Parameter (e.g. `alg`, `kid`), a duplicate, or a name that is not also present in the JOSE header is rejected with a `JsonWebTokenError` before the key callback, signature verification and claim validation run. Handler functions are only invoked after the signature has been verified; a handler that throws causes verification to fail. When this option is not provided, every token carrying a `crit` Header Parameter is rejected.
+
+```js
+// verify a token carrying a critical extension the application implements
+const token = jwt.sign({ data: 'payload' }, 'shhhhh', {
+  header: { crit: ['http://example.com/ext'], 'http://example.com/ext': 42 }
+});
+
+// acknowledge the extension without extra processing
+jwt.verify(token, 'shhhhh', { critical: ['http://example.com/ext'] });
+
+// or process it with a handler (runs only after signature verification)
+jwt.verify(token, 'shhhhh', {
+  critical: {
+    'http://example.com/ext': function (value) {
+      if (value !== 42) {
+        throw new Error('unsupported extension value');
+      }
+    }
+  }
+});
+```
 
 ```js
 // verify a token symmetric - synchronous

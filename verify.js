@@ -4,6 +4,7 @@ const TokenExpiredError = require('./lib/TokenExpiredError');
 const decode = require('./decode');
 const timespan = require('./lib/timespan');
 const validateAsymmetricKey = require('./lib/validateAsymmetricKey');
+const {normalizeCriticalOption, checkCriticalHeader, processCritical} = require('./lib/critical');
 const PS_SUPPORTED = require('./lib/psSupported');
 const jws = require('jws');
 const {KeyObject, createSecretKey, createPublicKey} = require("crypto");
@@ -54,6 +55,14 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
     return done(new JsonWebTokenError('allowInvalidAsymmetricKeyTypes must be a boolean'));
   }
 
+  let implementedCritical;
+
+  try {
+    implementedCritical = normalizeCriticalOption(options);
+  } catch (err) {
+    return done(err);
+  }
+
   const clockTimestamp = options.clockTimestamp || Math.floor(Date.now() / 1000);
 
   if (!jwtString){
@@ -83,6 +92,13 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
   }
 
   const header = decodedToken.header;
+
+  const criticalError = checkCriticalHeader(header, implementedCritical);
+
+  if (criticalError) {
+    return done(criticalError);
+  }
+
   let getSecret;
 
   if(typeof secretOrPublicKey === 'function') {
@@ -169,6 +185,12 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
 
     if (!valid) {
       return done(new JsonWebTokenError('invalid signature'));
+    }
+
+    const criticalProcessingError = processCritical(header, implementedCritical);
+
+    if (criticalProcessingError) {
+      return done(criticalProcessingError);
     }
 
     const payload = decodedToken.payload;
