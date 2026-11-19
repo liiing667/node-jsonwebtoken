@@ -5,6 +5,8 @@ const decode = require('./decode');
 const timespan = require('./lib/timespan');
 const validateAsymmetricKey = require('./lib/validateAsymmetricKey');
 const PS_SUPPORTED = require('./lib/psSupported');
+const resolveSecret = require('./lib/secretResolver');
+const once = require('lodash.once');
 const jws = require('jws');
 const {KeyObject, createSecretKey, createPublicKey} = require("crypto");
 
@@ -54,6 +56,10 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
     return done(new JsonWebTokenError('allowInvalidAsymmetricKeyTypes must be a boolean'));
   }
 
+  if (options.keyResolverTimeout !== undefined && (typeof options.keyResolverTimeout !== 'number' || !Number.isFinite(options.keyResolverTimeout) || options.keyResolverTimeout < 0)) {
+    return done(new JsonWebTokenError('keyResolverTimeout must be a non-negative finite number'));
+  }
+
   const clockTimestamp = options.clockTimestamp || Math.floor(Date.now() / 1000);
 
   if (!jwtString){
@@ -84,6 +90,7 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
 
   const header = decodedToken.header;
   let getSecret;
+  let keyResolverTimeoutMs;
 
   if(typeof secretOrPublicKey === 'function') {
     if(!callback) {
@@ -91,16 +98,24 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
     }
 
     getSecret = secretOrPublicKey;
+    keyResolverTimeoutMs = options.keyResolverTimeout !== undefined
+      ? options.keyResolverTimeout
+      : resolveSecret.DEFAULT_SECRET_RESOLVER_TIMEOUT_MS;
   }
   else {
     getSecret = function(header, secretCallback) {
       return secretCallback(null, secretOrPublicKey);
     };
+    keyResolverTimeoutMs = undefined;
   }
 
-  return getSecret(header, function(err, secretOrPublicKey) {
+  // The continuation of verification after the key is available must run
+  // exactly once: a misbehaving key resolver must never be able to drive a
+  // second verification (e.g. with a different key) or invoke the user
+  // callback twice.
+  const continueVerification = once(function (err, secretOrPublicKey) {
     if(err) {
-      return done(new JsonWebTokenError('error in secret or public key callback: ' + err.message));
+      return done(new JsonWebTokenError('error in secret or public key callback: ' + (err && err.message ? err.message : err)));
     }
 
     const hasSignature = parts[2].trim() !== '';
@@ -260,4 +275,15 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
 
     return done(null, payload);
   });
+
+  // A function key resolver runs as a cancellable, exactly-once, timeout-
+  // bounded stage: any failure (thrown error, callback error, duplicate
+  // callbacks or a timeout) surfaces as a single verification error and the
+  // continuation runs at most once. A static key keeps its original
+  // synchronous resolution path.
+  if (keyResolverTimeoutMs === undefined) {
+    return getSecret(header, continueVerification);
+  }
+
+  return resolveSecret(getSecret, header, keyResolverTimeoutMs, continueVerification);
 };

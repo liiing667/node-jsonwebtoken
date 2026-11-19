@@ -180,6 +180,108 @@ describe('verify', function() {
         done();
       });
     });
+
+    it('invokes the verification callback exactly once', function (done) {
+      const keyFunc = function(header, callback) {
+        callback(undefined, key);
+      };
+
+      let calls = 0;
+
+      jwt.verify(token, keyFunc, options, function (err, p) {
+        calls++;
+        assert.equal(calls, 1);
+        assert.isNull(err);
+        assert.deepEqual(p, payload);
+        setTimeout(done, 10);
+      });
+    });
+
+    it('converts a synchronous throw in the key callback into a verification error', function (done) {
+      const keyFunc = function() {
+        throw new Error('resolver blew up');
+      };
+
+      jwt.verify(token, keyFunc, options, function (err, p) {
+        assert.equal(err.name, 'JsonWebTokenError');
+        assert.match(err.message, /error in secret or public key callback/);
+        assert.match(err.message, /resolver blew up/);
+        assert.isUndefined(p);
+        done();
+      });
+    });
+
+    it('converts a non-Error throw in the key callback into a verification error', function (done) {
+      const keyFunc = function() {
+        throw 'string failure'; // eslint-disable-line no-throw-literal
+      };
+
+      jwt.verify(token, keyFunc, options, function (err, p) {
+        assert.equal(err.name, 'JsonWebTokenError');
+        assert.match(err.message, /threw an error/);
+        assert.isUndefined(p);
+        done();
+      });
+    });
+
+    it('only verifies with the first result when the key callback fires twice', function (done) {
+      const keyFunc = function(header, callback) {
+        callback(undefined, key);
+        setTimeout(function () {
+          callback(undefined, 'a-different-key');
+        }, 5);
+      };
+
+      let calls = 0;
+
+      jwt.verify(token, keyFunc, options, function (err, p) {
+        calls++;
+        assert.equal(calls, 1);
+        assert.isNull(err);
+        assert.deepEqual(p, payload);
+        setTimeout(done, 15);
+      });
+    });
+
+    it('fails with a verification error when the key callback times out', function (done) {
+      const keyFunc = function() {};
+
+      jwt.verify(token, keyFunc, Object.assign({ keyResolverTimeout: 25 }, options), function (err, p) {
+        assert.equal(err.name, 'JsonWebTokenError');
+        assert.match(err.message, /error in secret or public key callback/);
+        assert.match(err.message, /timed out after 25ms/);
+        assert.isUndefined(p);
+        done();
+      });
+    });
+
+    it('ignores a late key callback that arrives after the timeout', function (done) {
+      let resolverCallback;
+      const keyFunc = function(header, callback) {
+        resolverCallback = callback;
+      };
+
+      jwt.verify(token, keyFunc, Object.assign({ keyResolverTimeout: 25 }, options), function (err, p) {
+        assert.match(err.message, /timed out/);
+        resolverCallback(undefined, key);
+        setTimeout(function () {
+          assert.isUndefined(p);
+          done();
+        }, 10);
+      });
+    });
+
+    it('rejects a non-numeric keyResolverTimeout', function (done) {
+      const keyFunc = function(header, callback) {
+        callback(undefined, key);
+      };
+
+      jwt.verify(token, keyFunc, Object.assign({ keyResolverTimeout: 'soon' }, options), function (err) {
+        assert.equal(err.name, 'JsonWebTokenError');
+        assert.match(err.message, /keyResolverTimeout must be a non-negative finite number/);
+        done();
+      });
+    });
   });
 
   describe('expiration', function () {

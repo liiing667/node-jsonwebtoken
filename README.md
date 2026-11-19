@@ -161,6 +161,7 @@ As mentioned in [this comment](https://github.com/auth0/node-jsonwebtoken/issues
 * `clockTimestamp`: the time in seconds that should be used as the current time for all necessary comparisons.
 * `nonce`: if you want to check `nonce` claim, provide a string value here. It is used on Open ID for the ID Tokens. ([Open ID implementation notes](https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes))
 * `allowInvalidAsymmetricKeyTypes`: if true, allows asymmetric keys which do not match the specified algorithm. This option is intended only for backwards compatability and should be avoided.
+* `keyResolverTimeout`: when `secretOrPublicKey` is a function, the maximum time in milliseconds (a non-negative finite number, default `10000`) to wait for that function to provide a key. If it does not respond in time, verification fails with a single `JsonWebTokenError`. Key resolution always completes at most once: exceptions thrown by the resolver (synchronously), error callbacks, duplicate callbacks or a timeout are all converted into exactly one verification error and can never trigger a second verification or a second invocation of your callback.
 
 ```js
 // verify a token symmetric - synchronous
