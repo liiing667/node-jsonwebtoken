@@ -5,6 +5,8 @@ const decode = require('./decode');
 const timespan = require('./lib/timespan');
 const validateAsymmetricKey = require('./lib/validateAsymmetricKey');
 const PS_SUPPORTED = require('./lib/psSupported');
+const { isPssAlgorithm, validatePssKey } = require('./lib/pssParams');
+const pssCrypto = require('./lib/pssCrypto');
 const jws = require('jws');
 const {KeyObject, createSecretKey, createPublicKey} = require("crypto");
 
@@ -159,10 +161,28 @@ module.exports = function (jwtString, secretOrPublicKey, options, callback) {
       }
     }
 
+    if (isPssAlgorithm(header.alg)) {
+      try {
+        validatePssKey(header.alg, secretOrPublicKey);
+      } catch (e) {
+        return done(e);
+      }
+    }
+
     let valid;
 
     try {
-      valid = jws.verify(jwtString, decodedToken.header.alg, secretOrPublicKey);
+      if (isPssAlgorithm(decodedToken.header.alg)) {
+        const securedInput = jwtString.split('.').slice(0, 2).join('.');
+        valid = pssCrypto.verify(
+          decodedToken.header.alg,
+          securedInput,
+          decodedToken.signature,
+          secretOrPublicKey
+        );
+      } else {
+        valid = jws.verify(jwtString, decodedToken.header.alg, secretOrPublicKey);
+      }
     } catch (e) {
       return done(e);
     }

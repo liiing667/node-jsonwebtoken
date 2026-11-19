@@ -1,6 +1,8 @@
 const timespan = require('./lib/timespan');
 const PS_SUPPORTED = require('./lib/psSupported');
 const validateAsymmetricKey = require('./lib/validateAsymmetricKey');
+const { isPssAlgorithm, validatePssKey } = require('./lib/pssParams');
+const pssCrypto = require('./lib/pssCrypto');
 const jws = require('jws');
 const includes = require('lodash.includes');
 const isBoolean = require('lodash.isboolean');
@@ -225,6 +227,44 @@ module.exports = function (payload, secretOrPrivateKey, options, callback) {
   });
 
   const encoding = options.encoding || 'utf8';
+
+  const isPss = isPssAlgorithm(header.alg);
+
+  if (isPss) {
+    try {
+      validatePssKey(header.alg, secretOrPrivateKey);
+    } catch (error) {
+      return failure(error);
+    }
+
+    const encodedHeader = pssCrypto.base64UrlEncode(JSON.stringify(header));
+    const serializedPayload = Buffer.isBuffer(payload)
+      ? payload.toString(encoding)
+      : (typeof payload === 'string' ? payload : JSON.stringify(payload));
+    const encodedPayload = pssCrypto.base64UrlEncode(serializedPayload);
+    const securedInput = encodedHeader + '.' + encodedPayload;
+
+    if (typeof callback === 'function') {
+      callback = once(callback);
+      let signature;
+      try {
+        signature = pssCrypto.sign(header.alg, securedInput, secretOrPrivateKey);
+      } catch (error) {
+        return callback(error);
+      }
+      const token = securedInput + '.' + signature;
+      if (!options.allowInsecureKeySizes && token.length < 256) {
+        return callback(new Error(`secretOrPrivateKey has a minimum key size of 2048 bits for ${header.alg}`));
+      }
+      return callback(null, token);
+    }
+
+    const token = securedInput + '.' + pssCrypto.sign(header.alg, securedInput, secretOrPrivateKey);
+    if (!options.allowInsecureKeySizes && token.length < 256) {
+      throw new Error(`secretOrPrivateKey has a minimum key size of 2048 bits for ${header.alg}`);
+    }
+    return token;
+  }
 
   if (typeof callback === 'function') {
     callback = callback && once(callback);

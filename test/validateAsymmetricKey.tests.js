@@ -128,7 +128,7 @@ describe('Asymmetric key validation', function() {
         const shortSaltKey = loadKey('rsa-pss-invalid-salt-length-private.pem');
         expect(function() {
           validateAsymmetricKey(algorithm, shortSaltKey);
-        }).to.throw('Invalid key for this operation, its RSA-PSS parameter saltLength does not meet the requirements of "alg" PS256.')
+        }).to.throw('Invalid key for this operation, its RSA-PSS parameters do not meet the requirements of "alg" PS256.')
       });
 
       it(`it should pass the validation when the key matches all the requirements for the algorithm`, function () {
